@@ -60,6 +60,10 @@
 # for ln in [SRC_LANGUAGE, TGT_LANGUAGE]:
 #     vocab_transform[ln].set_default_index(UNK_IDX)
 #
+import os
+os.environ [ "TF_FORCE_GPU_ALLOW_GROWTH" ] = "true"
+
+
 from torch.utils.data import Dataset, DataLoader
 import pandas as pd
 import sentencepiece as spm
@@ -87,15 +91,15 @@ class CustomDatasetTrain(Dataset):
         kor_sentences = self.df_data['한국어']
         eng_sentences = self.df_data['영어']
 
-        self.inputs = self.preprocess(kor_sentences)
-        self.labels = self.preprocess(eng_sentences)
+        self.inputs = self.preprocess(self.vocab_han, kor_sentences)
+        self.labels = self.preprocess(self.vocab_eng, eng_sentences)
 
 
-    def preprocess(self, sentences):
+    def preprocess(self, vocab, sentences):
         sentences_list = []
 
         for sentence in sentences:
-            input_tensor = torch.tensor(self.vocab_han.encode(sentence))
+            input_tensor = torch.tensor(vocab.encode(sentence))
             # input_tensor = input_tensor.unsqueeze(0)
             sentences_list.append(input_tensor)
         return sentences_list
@@ -135,6 +139,7 @@ import torch.nn as nn
 from torch.nn import Transformer
 import math
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# DEVICE = 'cpu'
 
 # 단어 순서 개념(notion)을 토큰 임베딩에 도입하기 위한 위치 인코딩(positional encoding)을 위한 헬퍼 모듈(Module)
 class PositionalEncoding(nn.Module):
@@ -164,7 +169,17 @@ class TokenEmbedding(nn.Module):
         self.emb_size = emb_size
 
     def forward(self, tokens: Tensor):
-        return self.embedding(tokens.long()) * math.sqrt(self.emb_size)
+        try:
+            # print(tokens.shape)
+            # print(tokens.dtype)
+
+            output1 = self.embedding(tokens.long())
+            output2 = math.sqrt(self.emb_size)
+            output = output1 * output2
+        except:
+            aa =0
+        return output
+
 
 # Seq2Seq 신경망
 class Seq2SeqTransformer(nn.Module):
@@ -407,16 +422,29 @@ def train_epoch(model, optimizer):
         src = src.to(DEVICE)
         tgt = tgt.to(DEVICE)
 
-        tgt_input = tgt[:-1, :]
+        # tgt_input = tgt[:-1, :]
+
+        src = src.permute(1 ,0)
+        tgt=tgt.permute(1, 0)
+        tgt_input = tgt
 
         src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = create_mask(src, tgt_input)
 
-        logits = model(src, tgt_input, src_mask, tgt_mask,src_padding_mask, tgt_padding_mask, src_padding_mask)
+        # print(f'src: {src.shape}, tgt_input:{tgt_input.shape}, src_mask:{src_mask.shape}, '
+        #       f'tgt_mask:{tgt_mask.shape}, src_padding_mask:{src_padding_mask.shape}, tgt_padding_mask:{tgt_padding_mask.shape}, '
+        #       f'src_padding_mask:{src_padding_mask.shape}')
+        logits = model(src, tgt_input, src_mask, tgt_mask, src_padding_mask, tgt_padding_mask, src_padding_mask)
 
+        # print(f'logints:{logits.shape}')
         optimizer.zero_grad()
 
-        tgt_out = tgt[1:, :]
-        loss = loss_fn(logits.reshape(-1, logits.shape[-1]), tgt_out.reshape(-1))
+        # tgt_out = tgt[1:, :]
+        tgt_out = tgt
+        infer_out = logits.reshape(-1, logits.shape[-1])
+        target_data = tgt_out.reshape(-1)
+        # print(f'infer_out:{infer_out.shape}')
+        # print(f'target_data:{target_data.shape}')
+        loss = loss_fn(infer_out, target_data)
         loss.backward()
 
         optimizer.step()
