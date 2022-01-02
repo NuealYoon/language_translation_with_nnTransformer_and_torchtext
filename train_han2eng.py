@@ -4,62 +4,119 @@
 # - 이 튜토리얼에서는 Transformer(트랜스포머)를 사용한 번역 모델을 바닥부터 학습하는 방법을 배워보겠습니다.
 # - Multi30k 데이터셋을 사용하여 독일어(German)를 영어(English)로 번역하는 모델을 학습해보겠습니다.
 
-######################
-## 1. 데이터 구하고 처리하기
-######################
-# torchtext 라이브러리에는 언어 번역 모델을 생성하기 위한 데이터셋을 쉽게 만들 수 있는 도구들이 있습니다.
-# 이 튜토리얼에서는 torchtext의 내장(inbuilt) 데이터셋을 어떻게 사용하고, 원시(raw) 텍스트 문장을 토큰화(tokenize)하고,
-# 토큰을 텐서로 수치화하는 방법을 살펴보겠습니다. 출발어(source)-도착어(target) 원시(raw) 문장을 생성하기 위해서는 torchtext 라이브러리의 Multi30k 데이터셋 을 사용하겠습니다.
-from torchtext.data.utils import get_tokenizer
-from torchtext.vocab import build_vocab_from_iterator
-from torchtext.datasets import Multi30k
+# ######################
+# ## 1. 데이터 구하고 처리하기
+# ######################
+# # torchtext 라이브러리에는 언어 번역 모델을 생성하기 위한 데이터셋을 쉽게 만들 수 있는 도구들이 있습니다.
+# # 이 튜토리얼에서는 torchtext의 내장(inbuilt) 데이터셋을 어떻게 사용하고, 원시(raw) 텍스트 문장을 토큰화(tokenize)하고,
+# # 토큰을 텐서로 수치화하는 방법을 살펴보겠습니다. 출발어(source)-도착어(target) 원시(raw) 문장을 생성하기 위해서는 torchtext 라이브러리의 Multi30k 데이터셋 을 사용하겠습니다.
+# from torchtext.data.utils import get_tokenizer
+# from torchtext.vocab import build_vocab_from_iterator
+# from torchtext.datasets import Multi30k
+# from typing import Iterable, List
+#
+#
+# SRC_LANGUAGE = 'de'
+# TGT_LANGUAGE = 'en'
+#
+# # Place-holders
+# token_transform = {}
+# vocab_transform = {}
+#
+#
+# # 출발어(source)와 목적어(target)의 토크나이저(tokenizer)를 생성합니다.
+# # 아래 필요 사항(dependency)을 모두 설치해주세요.
+# # pip install -U spacy
+# # python -m spacy download en_core_web_sm
+# # python -m spacy download de_core_news_sm
+# token_transform[SRC_LANGUAGE] = get_tokenizer('spacy', language='de_core_news_sm')
+# token_transform[TGT_LANGUAGE] = get_tokenizer('spacy', language='en_core_web_sm')
+#
+#
+# # 토큰 목록을 생성하기 위한 헬퍼(helper) 함수
+# def yield_tokens(data_iter: Iterable, language: str) -> List[str]:
+#     language_index = {SRC_LANGUAGE: 0, TGT_LANGUAGE: 1}
+#
+#     for data_sample in data_iter:
+#         yield token_transform[language](data_sample[language_index[language]])
+#
+# # 특수 기호(symbol)와 인덱스를 정의합니다
+# UNK_IDX, PAD_IDX, BOS_IDX, EOS_IDX = 0, 1, 2, 3
+# # 토큰들이 어휘집(vocab)에 인덱스 순서대로 잘 삽입되어 있는지 확인합니다
+# special_symbols = ['<unk>', '<pad>', '<bos>', '<eos>']
+#
+# for ln in [SRC_LANGUAGE, TGT_LANGUAGE]:
+#     # 학습용 데이터 반복자(iterator)
+#     train_iter = Multi30k(split='train', language_pair=(SRC_LANGUAGE, TGT_LANGUAGE))
+#     # torchtext의 Vocab(어휘집) 객체 생성
+#     vocab_transform[ln] = build_vocab_from_iterator(yield_tokens(train_iter, ln),
+#                                                     min_freq=1,
+#                                                     specials=special_symbols,
+#                                                     special_first=True)
+#
+# # UNK_IDX를 기본 인덱스로 설정합니다. 이 인덱스는 토큰을 찾지 못하는 경우에 반환됩니다.
+# # 만약 기본 인덱스를 설정하지 않으면 어휘집(Vocabulary)에서 토큰을 찾지 못하는 경우
+# # RuntimeError가 발생합니다.
+# for ln in [SRC_LANGUAGE, TGT_LANGUAGE]:
+#     vocab_transform[ln].set_default_index(UNK_IDX)
+#
+from torch.utils.data import Dataset, DataLoader
+import pandas as pd
+import sentencepiece as spm
+import torch
 from typing import Iterable, List
 
+SRC_LANGUAGE = 'kor'
+TGT_LANGUAGE = 'eng'
 
-SRC_LANGUAGE = 'de'
-TGT_LANGUAGE = 'en'
-
-# Place-holders
-token_transform = {}
-vocab_transform = {}
-
-
-# 출발어(source)와 목적어(target)의 토크나이저(tokenizer)를 생성합니다.
-# 아래 필요 사항(dependency)을 모두 설치해주세요.
-# pip install -U spacy
-# python -m spacy download en_core_web_sm
-# python -m spacy download de_core_news_sm
-token_transform[SRC_LANGUAGE] = get_tokenizer('spacy', language='de_core_news_sm')
-token_transform[TGT_LANGUAGE] = get_tokenizer('spacy', language='en_core_web_sm')
-
-
-# 토큰 목록을 생성하기 위한 헬퍼(helper) 함수
-def yield_tokens(data_iter: Iterable, language: str) -> List[str]:
-    language_index = {SRC_LANGUAGE: 0, TGT_LANGUAGE: 1}
-
-    for data_sample in data_iter:
-        yield token_transform[language](data_sample[language_index[language]])
-
-# 특수 기호(symbol)와 인덱스를 정의합니다
-UNK_IDX, PAD_IDX, BOS_IDX, EOS_IDX = 0, 1, 2, 3
-# 토큰들이 어휘집(vocab)에 인덱스 순서대로 잘 삽입되어 있는지 확인합니다
+# # 특수 기호(symbol)와 인덱스를 정의합니다
+PAD_IDX, UNK_IDX, BOS_IDX, EOS_IDX = 0, 1, 2, 3
+# # 토큰들이 어휘집(vocab)에 인덱스 순서대로 잘 삽입되어 있는지 확인합니다
 special_symbols = ['<unk>', '<pad>', '<bos>', '<eos>']
 
-for ln in [SRC_LANGUAGE, TGT_LANGUAGE]:
-    # 학습용 데이터 반복자(iterator)
-    train_iter = Multi30k(split='train', language_pair=(SRC_LANGUAGE, TGT_LANGUAGE))
-    # torchtext의 Vocab(어휘집) 객체 생성
-    vocab_transform[ln] = build_vocab_from_iterator(yield_tokens(train_iter, ln),
-                                                    min_freq=1,
-                                                    specials=special_symbols,
-                                                    special_first=True)
+class CustomDatasetTrain(Dataset):
+    def __init__(self, data_path):
+        self.df_data = pd.read_excel(data_path)
 
-# UNK_IDX를 기본 인덱스로 설정합니다. 이 인덱스는 토큰을 찾지 못하는 경우에 반환됩니다.
-# 만약 기본 인덱스를 설정하지 않으면 어휘집(Vocabulary)에서 토큰을 찾지 못하는 경우
-# RuntimeError가 발생합니다.
-for ln in [SRC_LANGUAGE, TGT_LANGUAGE]:
-    vocab_transform[ln].set_default_index(UNK_IDX)
+        self.vocab_han = spm.SentencePieceProcessor()
+        self.vocab_eng = spm.SentencePieceProcessor()
 
+        self.vocab_han.load("news_han_28000.model")
+        self.vocab_eng.load("news_eng_18000.model")
+
+        kor_sentences = self.df_data['한국어']
+        eng_sentences = self.df_data['영어']
+
+        self.inputs = self.preprocess(kor_sentences)
+        self.labels = self.preprocess(eng_sentences)
+
+
+    def preprocess(self, sentences):
+        sentences_list = []
+
+        for sentence in sentences:
+            input_tensor = torch.tensor(self.vocab_han.encode(sentence))
+            # input_tensor = input_tensor.unsqueeze(0)
+            sentences_list.append(input_tensor)
+        return sentences_list
+
+
+    def __len__(self):
+        return len(self.df_data['한국어'])
+
+    def __getitem__(self, index):
+        return self.inputs[index], self.labels[index]
+
+data_path = 'D:/Datas/NLP/번역/ai허브/한국어_영어_번역말뭉치/3.문어체-뉴스.xlsx'
+train_dataset = CustomDatasetTrain(data_path)
+train_dataloader = DataLoader(dataset=train_dataset, batch_size = 1)
+
+# for src, tag in train_dataloader:
+#     print(src)
+#     print(tag)
+#     dd =0
+# cc = 0
+# exit()
 
 ################################################
 # 2. Transformer를 사용한 시퀀스-투-시퀀스(Seq2Seq)신경망
@@ -266,8 +323,11 @@ def create_mask(src, tgt):
 
 torch.manual_seed(0)
 
-SRC_VOCAB_SIZE = len(vocab_transform[SRC_LANGUAGE])
-TGT_VOCAB_SIZE = len(vocab_transform[TGT_LANGUAGE])
+# SRC_VOCAB_SIZE = len(vocab_transform[SRC_LANGUAGE])
+# TGT_VOCAB_SIZE = len(vocab_transform[TGT_LANGUAGE])
+SRC_VOCAB_SIZE = len(train_dataset.vocab_han)
+TGT_VOCAB_SIZE = len(train_dataset.vocab_eng)
+
 EMB_SIZE = 512
 NHEAD = 8
 FFN_HID_DIM = 512
@@ -314,11 +374,14 @@ def tensor_transform(token_ids: List[int]):
 
 # 출발어(src)와 도착어(tgt) 원시 문자열들을 텐서 인덱스로 변환하는 변형(transform)
 text_transform = {}
+# for ln in [SRC_LANGUAGE, TGT_LANGUAGE]:
+#     text_transform[ln] = sequential_transforms(token_transform[ln], # 토큰화(Tokenization)
+#                                                vocab_transform[ln], # 수치화(Numericalization)
+#                                                tensor_transform) # BOS/EOS를 추가하고 텐서를 생성
 for ln in [SRC_LANGUAGE, TGT_LANGUAGE]:
-    text_transform[ln] = sequential_transforms(token_transform[ln], # 토큰화(Tokenization)
-                                               vocab_transform[ln], # 수치화(Numericalization)
+    text_transform[ln] = sequential_transforms(train_dataset.vocab_han.encode_as_pieces, # 토큰화(Tokenization)
+                                               train_dataset.vocab_han.encode, # 수치화(Numericalization)
                                                tensor_transform) # BOS/EOS를 추가하고 텐서를 생성
-
 
 # 데이터를 텐서로 조합(collate)하는 함수
 def collate_fn(batch):
@@ -337,8 +400,8 @@ from torch.utils.data import DataLoader
 def train_epoch(model, optimizer):
     model.train()
     losses = 0
-    train_iter = Multi30k(split='train', language_pair=(SRC_LANGUAGE, TGT_LANGUAGE))
-    train_dataloader = DataLoader(train_iter, batch_size=BATCH_SIZE, collate_fn=collate_fn)
+    # train_iter = Multi30k(split='train', language_pair=(SRC_LANGUAGE, TGT_LANGUAGE))
+    # train_dataloader = DataLoader(train_iter, batch_size=BATCH_SIZE, collate_fn=collate_fn)
 
     for src, tgt in train_dataloader:
         src = src.to(DEVICE)
@@ -362,28 +425,28 @@ def train_epoch(model, optimizer):
     return losses / len(train_dataloader)
 
 
-def evaluate(model):
-    model.eval()
-    losses = 0
-
-    val_iter = Multi30k(split='valid', language_pair=(SRC_LANGUAGE, TGT_LANGUAGE))
-    val_dataloader = DataLoader(val_iter, batch_size=BATCH_SIZE, collate_fn=collate_fn)
-
-    for src, tgt in val_dataloader:
-        src = src.to(DEVICE)
-        tgt = tgt.to(DEVICE)
-
-        tgt_input = tgt[:-1, :]
-
-        src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = create_mask(src, tgt_input)
-
-        logits = model(src, tgt_input, src_mask, tgt_mask,src_padding_mask, tgt_padding_mask, src_padding_mask)
-
-        tgt_out = tgt[1:, :]
-        loss = loss_fn(logits.reshape(-1, logits.shape[-1]), tgt_out.reshape(-1))
-        losses += loss.item()
-
-    return losses / len(val_dataloader)
+# def evaluate(model):
+#     model.eval()
+#     losses = 0
+#
+#     val_iter = Multi30k(split='valid', language_pair=(SRC_LANGUAGE, TGT_LANGUAGE))
+#     val_dataloader = DataLoader(val_iter, batch_size=BATCH_SIZE, collate_fn=collate_fn)
+#
+#     for src, tgt in val_dataloader:
+#         src = src.to(DEVICE)
+#         tgt = tgt.to(DEVICE)
+#
+#         tgt_input = tgt[:-1, :]
+#
+#         src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = create_mask(src, tgt_input)
+#
+#         logits = model(src, tgt_input, src_mask, tgt_mask,src_padding_mask, tgt_padding_mask, src_padding_mask)
+#
+#         tgt_out = tgt[1:, :]
+#         loss = loss_fn(logits.reshape(-1, logits.shape[-1]), tgt_out.reshape(-1))
+#         losses += loss.item()
+#
+#     return losses / len(val_dataloader)
 # 이제 모델 학습을 위한 모든 요소가 준비되었습니다. 학습을 해보겠습니다!
 
 from timeit import default_timer as timer
@@ -393,8 +456,9 @@ for epoch in range(1, NUM_EPOCHS+1):
     start_time = timer()
     train_loss = train_epoch(transformer, optimizer)
     end_time = timer()
-    val_loss = evaluate(transformer)
-    print((f"Epoch: {epoch}, Train loss: {train_loss:.3f}, Val loss: {val_loss:.3f}, "f"Epoch time = {(end_time - start_time):.3f}s"))
+    # val_loss = evaluate(transformer)
+    # print((f"Epoch: {epoch}, Train loss: {train_loss:.3f}, Val loss: {val_loss:.3f}, "f"Epoch time = {(end_time - start_time):.3f}s"))
+    print((f"Epoch: {epoch}, Train loss: {train_loss:.3f}, "f"Epoch time = {(end_time - start_time):.3f}s"))
 
 
 # 탐욕(greedy) 알고리즘을 사용하여 출력 순서(sequence)를 생성하는 함수
@@ -421,19 +485,6 @@ def greedy_decode(model, src, src_mask, max_len, start_symbol):
     return ys
 
 
-# 입력 문장을 도착어로 번역하는 함수
-def translate(model: torch.nn.Module, src_sentence: str):
-    model.eval()
-    src = text_transform[SRC_LANGUAGE](src_sentence).view(-1, 1)
-    num_tokens = src.shape[0]
-    src_mask = (torch.zeros(num_tokens, num_tokens)).type(torch.bool)
-    tgt_tokens = greedy_decode(
-        model,  src, src_mask, max_len=num_tokens + 5, start_symbol=BOS_IDX).flatten()
-    return " ".join(vocab_transform[TGT_LANGUAGE].lookup_tokens(list(tgt_tokens.cpu().numpy()))).replace("<bos>", "").replace("<eos>", "")
-print(translate(transformer, "Eine Gruppe von Menschen steht vor einem Iglu ."))
-
-
-
 # # 학습된 모델과 정보 저장
 # model_info = {'epochs': NUM_EPOCHS,
 #               'model_state_dict': transformer.state_dict(),
@@ -448,4 +499,18 @@ model_info = {'epochs': NUM_EPOCHS,
               'optimizer_state_dict': optimizer.state_dict()}
 
 
-torch.save(model_info, 'model.pt')
+torch.save(model_info, 'model_han2eng.pt')
+
+# 입력 문장을 도착어로 번역하는 함수
+def translate(model: torch.nn.Module, src_sentence: str):
+    model.eval()
+    src = text_transform[SRC_LANGUAGE](src_sentence).view(-1, 1)
+    num_tokens = src.shape[0]
+    src_mask = (torch.zeros(num_tokens, num_tokens)).type(torch.bool)
+    tgt_tokens = greedy_decode(
+        model,  src, src_mask, max_len=num_tokens + 5, start_symbol=BOS_IDX).flatten()
+    return " ".join(vocab_transform[TGT_LANGUAGE].lookup_tokens(list(tgt_tokens.cpu().numpy()))).replace("<bos>", "").replace("<eos>", "")
+print(translate(transformer, "Eine Gruppe von Menschen steht vor einem Iglu ."))
+
+
+
