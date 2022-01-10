@@ -12,10 +12,12 @@ import sentencepiece as spm
 # spm_train --input=data/train_tokenizer.txt  --model_prefix=sentencepiece/sp --vocab_size=32000 character_coverage=1.0 --model_type="unigram"
 
 # input_file = 'data/train_tokenizer.txt'
-input_file = 'newsKor.txt'
-vocab_size = 28000
-
-sp_model_root='sentencepiece'
+# input_file = 'newsKor.txt'
+# vocab_size = 28000
+# sp_model_root='sentencepiece_kor'
+input_file = './data/newsKor.txt'
+vocab_size = 18000
+sp_model_root='sentencepiece_eng'
 if not os.path.isdir(sp_model_root):
     os.mkdir(sp_model_root)
 sp_model_name = 'tokenizer_%d' % (vocab_size)
@@ -49,4 +51,9 @@ tokens = sp.decode_pieces(tokens)
 ids = sp.decode_ids(ids)
 
 print(ids)
+print(tokens)
+
+tokens = sp.encode(['[BOS]'])
+
+print(tokens)
 print(tokens)
